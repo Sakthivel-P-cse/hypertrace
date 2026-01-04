@@ -1,0 +1,271 @@
+# Fix Templates - Library of safe, human-written code fixes
+# Save as fix_templates.yaml
+
+templates:
+  # Java Templates
+  - id: java-null-check
+    name: "Add Null Check"
+    language: java
+    error_types:
+      - NullPointerException
+    description: "Add null check before accessing object methods/properties"
+    pattern:
+      # Pattern to match in code
+      match: "\\b(\\w+)\\.(\\w+)\\("
+    fix_template: |
+      if ({{variable}} != null) {
+          {{original_line}}
+      } else {
+          // Handle null case
+          logger.warn("Null {{variable}} encountered");
+          return null;  // or throw exception, or default value
+      }
+    safety_level: high
+    requires_review: false
+    test_required: true
+    
+  - id: java-try-catch-wrapper
+    name: "Wrap with Try-Catch"
+    language: java
+    error_types:
+      - RuntimeException
+      - Exception
+      - IOException
+    description: "Wrap risky operation in try-catch block"
+    fix_template: |
+      try {
+          {{original_line}}
+      } catch ({{exception_type}} e) {
+          logger.error("Error in {{function_name}}: " + e.getMessage(), e);
+          // Handle error appropriately
+          throw new ServiceException("Failed to {{operation}}", e);
+      }
+    safety_level: medium
+    requires_review: true
+    test_required: true
+    
+  - id: java-resource-close
+    name: "Add Resource Closing"
+    language: java
+    error_types:
+      - ResourceLeakException
+    description: "Ensure resources are properly closed"
+    fix_template: |
+      try ({{resource_type}} {{resource_name}} = {{resource_initialization}}) {
+          {{original_code}}
+      } catch (Exception e) {
+          logger.error("Error handling resource: " + e.getMessage(), e);
+          throw e;
+      }
+    safety_level: high
+    requires_review: false
+    test_required: true
+    
+  - id: java-add-logging
+    name: "Add Error Logging"
+    language: java
+    error_types:
+      - "*"  # Any error
+    description: "Add logging for better observability"
+    fix_template: |
+      logger.info("Executing {{function_name}} with parameters: {{params}}");
+      try {
+          {{original_line}}
+          logger.info("Successfully completed {{function_name}}");
+      } catch (Exception e) {
+          logger.error("Error in {{function_name}}: " + e.getMessage(), e);
+          throw e;
+      }
+    safety_level: high
+    requires_review: false
+    test_required: false
+    
+  # Python Templates
+  - id: python-none-check
+    name: "Add None Check"
+    language: python
+    error_types:
+      - AttributeError
+      - TypeError
+    description: "Add None check before accessing attributes"
+    fix_template: |
+      if {{variable}} is not None:
+          {{original_line}}
+      else:
+          # Handle None case
+          logger.warning(f"None {{'{{variable}}'}} encountered")
+          return None
+    safety_level: high
+    requires_review: false
+    test_required: true
+    
+  - id: python-try-except
+    name: "Wrap with Try-Except"
+    language: python
+    error_types:
+      - Exception
+      - RuntimeError
+      - ValueError
+    description: "Wrap operation in try-except block"
+    fix_template: |
+      try:
+          {{original_line}}
+      except {{exception_type}} as e:
+          logger.error(f"Error in {{function_name}}: {e}")
+          raise ServiceException(f"Failed to {{operation}}") from e
+    safety_level: medium
+    requires_review: true
+    test_required: true
+    
+  - id: python-dict-get
+    name: "Use dict.get() with Default"
+    language: python
+    error_types:
+      - KeyError
+    description: "Replace dict['key'] with dict.get('key', default)"
+    pattern:
+      match: "(\\w+)\\['(\\w+)'\\]"
+    fix_template: |
+      {{dict_name}}.get('{{key}}', {{default_value}})
+    safety_level: high
+    requires_review: false
+    test_required: true
+    
+  # JavaScript Templates
+  - id: js-null-undefined-check
+    name: "Add Null/Undefined Check"
+    language: javascript
+    error_types:
+      - TypeError
+      - "Cannot read property"
+    description: "Add null/undefined check"
+    fix_template: |
+      if ({{variable}} != null) {
+          {{original_line}}
+      } else {
+          console.warn(`Null/undefined {{'{{variable}}'}} encountered`);
+          return null;
+      }
+    safety_level: high
+    requires_review: false
+    test_required: true
+    
+  - id: js-optional-chaining
+    name: "Use Optional Chaining"
+    language: javascript
+    error_types:
+      - TypeError
+      - "Cannot read property"
+    description: "Replace chained access with optional chaining"
+    pattern:
+      match: "(\\w+)\\.(\\w+)\\.(\\w+)"
+    fix_template: |
+      {{object}}?.{{property1}}?.{{property2}}
+    safety_level: high
+    requires_review: false
+    test_required: true
+    
+  - id: js-try-catch
+    name: "Wrap with Try-Catch"
+    language: javascript
+    error_types:
+      - Error
+      - ReferenceError
+    description: "Wrap operation in try-catch"
+    fix_template: |
+      try {
+          {{original_line}}
+      } catch (error) {
+          console.error(`Error in {{function_name}}:`, error);
+          throw new Error(`Failed to {{operation}}: ${error.message}`);
+      }
+    safety_level: medium
+    requires_review: true
+    test_required: true
+    
+  # Generic/Cross-language Templates
+  - id: timeout-increase
+    name: "Increase Timeout"
+    language: "*"
+    error_types:
+      - TimeoutException
+      - Timeout
+    description: "Increase operation timeout"
+    fix_template: |
+      # Original timeout: {{old_timeout}}
+      # Increased timeout to prevent premature timeouts
+      timeout = {{new_timeout}}  # Increased from {{old_timeout}}
+    safety_level: medium
+    requires_review: true
+    test_required: true
+    metadata:
+      timeout_multiplier: 2
+      
+  - id: retry-logic
+    name: "Add Retry Logic"
+    language: "*"
+    error_types:
+      - ConnectionError
+      - NetworkError
+      - TimeoutException
+    description: "Add retry logic for transient failures"
+    fix_template: |
+      max_retries = 3
+      retry_delay = 1  # seconds
+      
+      for attempt in range(max_retries):
+          try:
+              {{original_line}}
+              break  # Success, exit retry loop
+          except {{exception_type}} as e:
+              if attempt < max_retries - 1:
+                  logger.warning(f"Attempt {attempt + 1} failed, retrying...")
+                  time.sleep(retry_delay * (attempt + 1))  # Exponential backoff
+              else:
+                  logger.error(f"All {max_retries} attempts failed")
+                  raise
+    safety_level: medium
+    requires_review: true
+    test_required: true
+    
+  - id: circuit-breaker
+    name: "Add Circuit Breaker"
+    language: "*"
+    error_types:
+      - ConnectionError
+      - ServiceUnavailable
+    description: "Implement circuit breaker pattern"
+    fix_template: |
+      # Circuit breaker configuration
+      circuit_breaker = CircuitBreaker(
+          failure_threshold=5,
+          timeout=60,
+          expected_exception={{exception_type}}
+      )
+      
+      @circuit_breaker
+      def {{function_name}}_with_breaker({{params}}):
+          {{original_code}}
+    safety_level: low
+    requires_review: true
+    test_required: true
+
+# Fix Selection Rules
+selection_rules:
+  - name: "Prefer simple fixes"
+    priority: 1
+    condition: "safety_level == 'high'"
+    
+  - name: "Avoid architectural changes"
+    priority: 2
+    condition: "safety_level != 'low'"
+    
+  - name: "Require review for medium safety"
+    priority: 3
+    condition: "safety_level == 'medium'"
+    action: "requires_review = true"
+    
+  - name: "Always test critical services"
+    priority: 4
+    condition: "service in critical_services"
+    action: "test_required = true"

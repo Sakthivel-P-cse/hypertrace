@@ -1,0 +1,7 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'sparkyfitness-backend'
+    static_configs:
+      - targets: ['sparkyfitness-server:3010']

@@ -1,0 +1,578 @@
+# =============================================================================
+# STEP 10: CONCURRENCY & SAFETY CONTROLS CONFIGURATION
+# =============================================================================
+# Complete configuration for enterprise-grade concurrency control including:
+# - Distributed locking with deadlock prevention
+# - Dependency-aware conflict detection using RCA graph
+# - Safety gates and error budgets
+# - Human override and escalation
+# - Multi-channel notifications
+# - Audit logging with hash chain
+
+# =============================================================================
+# DISTRIBUTED LOCKING
+# =============================================================================
+locking:
+  # Backend selection
+  backend: redis  # Options: redis, etcd, kubernetes, file (dev/testing only)
+  
+  # Redis configuration (production recommended)
+  redis:
+    host: localhost
+    port: 6379
+    db: 0
+    password: "${REDIS_PASSWORD:-}"  # Use environment variable, empty for no auth
+    ssl: false
+    socket_timeout: 5
+    connection_pool_size: 10
+  
+  # etcd configuration (alternative to Redis)
+  etcd:
+    endpoints:
+      - http://localhost:2379
+    timeout: 5
+  
+  # Kubernetes Lease configuration (for K8s deployments)
+  kubernetes:
+    namespace: default
+    lease_duration_seconds: 15
+    renew_deadline_seconds: 10
+    retry_period_seconds: 2
+  
+  # File-based locking (development/testing ONLY - not for production!)
+  file:
+    lock_dir: /tmp/concurrency_locks
+    cleanup_stale_after_seconds: 600
+  
+  # Lock behavior
+  default_ttl_seconds: 300  # 5 minutes
+  max_ttl_seconds: 3600      # 1 hour
+  wait_timeout_seconds: 30   # How long to wait for lock acquisition
+  auto_renew: true          # Automatically renew locks for long operations
+  renew_interval_seconds: 60 # Renew every 60 seconds
+  
+  # Lock ordering rules (CRITICAL for deadlock prevention)
+  # ALWAYS acquire locks in this order: SYSTEM → SERVICE → INCIDENT → DEPLOYMENT
+  lock_ordering:
+    SYSTEM: 1       # System-wide operations (maintenance, upgrades)
+    SERVICE: 2      # Service-level operations (deployments, rollbacks)
+    INCIDENT: 3     # Incident-specific operations (verification, fixes)
+    DEPLOYMENT: 4   # Deployment-specific operations (canary, blue-green)
+  
+  # Within same scope, use alphabetical ordering of resource IDs
+  alphabetical_ordering_within_scope: true
+  
+  # Deadlock prevention
+  deadlock_detection:
+    enabled: true
+    check_interval_seconds: 10
+    max_wait_time_seconds: 60
+    force_release_on_deadlock: false  # Require manual intervention
+
+# =============================================================================
+# CONFLICT DETECTION (DEPENDENCY-AWARE)
+# =============================================================================
+conflict_detection:
+  # Enable dependency-aware conflict detection using RCA graph
+  dependency_aware: true
+  
+  # Neo4j connection for dependency graph (from Step 3 RCA)
+  neo4j:
+    uri: bolt://localhost:7687
+    user: neo4j
+    password: "${NEO4J_PASSWORD:-neo4j}"  # Use environment variable, fallback to 'neo4j' for local dev
+    database: neo4j
+    max_connection_lifetime: 3600
+    max_connection_pool_size: 50
+    connection_timeout: 30
+  
+  # Conflict types and severity mappings
+  conflict_types:
+    DIRECT:             # Same service, same operation type
+      severity: critical
+      action: block       # Block operation immediately
+      notify: [slack, pagerduty]
+    
+    DEPENDENCY:         # Dependent service has ongoing operation
+      severity: high
+      action: pause_for_review  # Pause and request human approval
+      notify: [slack, email]
+    
+    DOWNSTREAM:         # Downstream service affected
+      severity: medium
+      action: warn        # Allow but warn
+      notify: [slack]
+    
+    UPSTREAM:           # Upstream service affected
+      severity: high
+      action: pause_for_review
+      notify: [slack, email]
+    
+    SHARED_RESOURCE:    # Services share infrastructure (DB, cache, queue)
+      severity: high
+      action: pause_for_review
+      notify: [slack, email]
+    
+    CASCADE:            # Operation could trigger cascading changes
+      severity: high
+      action: pause_for_review
+      notify: [slack, email]
+    
+    TIMING:             # Operations too close in time
+      severity: medium
+      action: delay       # Delay second operation
+      notify: [slack]
+  
+  # Resource groups (services sharing infrastructure)
+  resource_groups:
+    postgres_primary:
+      - payment-service
+      - user-service
+      - order-service
+    
+    postgres_analytics:
+      - analytics-service
+      - reporting-service
+    
+    redis_cache:
+      - user-service
+      - session-service
+      - auth-service
+    
+    kafka_orders:
+      - order-service
+      - inventory-service
+      - shipping-service
+    
+    kafka_events:
+      - notification-service
+      - audit-service
+      - analytics-service
+  
+  # Blast radius calculation
+  blast_radius:
+    include_downstream: true
+    max_depth: 3  # How many levels deep to traverse dependency graph
+    
+    # Weight factors for blast radius score
+    weights:
+      direct_dependencies: 1.0
+      downstream_dependencies: 0.5
+      shared_resources: 0.8
+      upstream_dependencies: 0.3
+
+# =============================================================================
+# SAFETY GATES
+# =============================================================================
+safety_gates:
+  # Error budget gate
+  error_budget:
+    enabled: true
+    # Don't proceed if error budget exhausted
+    max_error_budget_pct: 2.0      # Max 2% error budget
+    check_window_hours: 24          # Look back 24 hours
+    block_if_exceeded: true
+  
+  # Blast radius gate
+  blast_radius:
+    enabled: true
+    max_blast_radius_pct: 20.0      # Max 20% of services affected
+    max_absolute_services: 10       # Max 10 services affected
+    block_if_exceeded: true
+  
+  # Recent failures gate
+  recent_failures:
+    enabled: true
+    max_failures_in_window: 3       # Max 3 failures
+    window_hours: 1                 # In past 1 hour
+    block_if_exceeded: true
+  
+  # Cooldown gate
+  cooldown:
+    enabled: true
+    min_seconds_between_ops: 300    # 5 minutes between operations
+    per_service: true               # Apply per-service or globally
+    block_if_violated: true
+  
+  # Resource capacity gate
+  resource_capacity:
+    enabled: true
+    min_cpu_pct: 20                 # Require 20% CPU headroom
+    min_memory_pct: 20              # Require 20% memory headroom
+    min_disk_pct: 30                # Require 30% disk headroom
+    block_if_insufficient: true
+  
+  # Incident rate gate
+  incident_rate:
+    enabled: true
+    max_incidents_per_hour: 5       # Max 5 incidents/hour
+    block_if_exceeded: true
+  
+  # Time-based gates
+  time_based:
+    enabled: true
+    # Maintenance windows (allow operations)
+    maintenance_windows:
+      - day: tuesday
+        start_time: "02:00"
+        end_time: "04:00"
+        timezone: UTC
+      - day: thursday
+        start_time: "02:00"
+        end_time: "04:00"
+        timezone: UTC
+    
+    # Blackout windows (block operations)
+    blackout_windows:
+      - day: monday
+        start_time: "09:00"
+        end_time: "17:00"
+        timezone: America/New_York
+        reason: "Peak business hours"
+      - day: friday
+        start_time: "16:00"
+        end_time: "23:59"
+        timezone: America/New_York
+        reason: "Friday evening - avoid weekend issues"
+
+# =============================================================================
+# HUMAN OVERRIDE & ESCALATION
+# =============================================================================
+human_override:
+  # Enable human override capability
+  enabled: true
+  
+  # Pause conditions (when to pause for human review)
+  pause_conditions:
+    - conflict_severity: [high, critical]
+    - safety_gate_failed: [error_budget, blast_radius]
+    - multiple_failures: 2  # Pause after 2 consecutive failures
+    - blast_radius_threshold: 10  # Pause if >10 services affected
+  
+  # Escalation policy
+  escalation:
+    # Level 1: On-call engineer
+    level_1:
+      timeout_minutes: 15
+      notify: [slack, email]
+      approvers:
+        - team: sre
+          role: on_call
+    
+    # Level 2: SRE lead
+    level_2:
+      timeout_minutes: 30
+      notify: [slack, email, pagerduty]
+      approvers:
+        - team: sre
+          role: lead
+    
+    # Level 3: Engineering manager
+    level_3:
+      timeout_minutes: 60
+      notify: [slack, email, pagerduty, phone]
+      approvers:
+        - team: engineering
+          role: manager
+  
+  # Auto-resume conditions (when to auto-resume after pause)
+  auto_resume:
+    enabled: false  # Require explicit human approval
+    conditions:
+      - conflict_resolved: true
+      - safety_gates_passed: true
+      - timeout_minutes: 60  # Auto-cancel after 60 minutes
+
+# =============================================================================
+# STATE MACHINE
+# =============================================================================
+state_machine:
+  # State transition timeouts
+  timeouts:
+    LOCKED: 60          # Max 60s in LOCKED state
+    SAFETY_CHECK: 30    # Max 30s for safety checks
+    IN_PROGRESS: 600    # Max 10 minutes for operation
+    PAUSED_FOR_HUMAN_REVIEW: 3600  # Max 1 hour waiting for human
+  
+  # Automatic transitions
+  auto_transitions:
+    # Auto-fail if stuck in state too long
+    timeout_action: FAILED
+    
+    # Auto-cancel if paused too long
+    pause_timeout_action: CANCELLED
+  
+  # Allowed state transitions (enforced by state machine)
+  # This is defined in code but documented here for reference
+  allowed_transitions:
+    INIT: [LOCKED, FAILED, CANCELLED]
+    LOCKED: [SAFETY_CHECK, FAILED, CANCELLED]
+    SAFETY_CHECK: [IN_PROGRESS, PAUSED_FOR_HUMAN_REVIEW, FAILED, CANCELLED]
+    IN_PROGRESS: [COMPLETED, PAUSED_FOR_HUMAN_REVIEW, FAILED, ROLLED_BACK]
+    PAUSED_FOR_HUMAN_REVIEW: [IN_PROGRESS, FAILED, CANCELLED]
+    COMPLETED: []  # Terminal state
+    FAILED: [ROLLED_BACK]
+    ROLLED_BACK: []  # Terminal state
+    CANCELLED: []  # Terminal state
+
+# =============================================================================
+# AUDIT LOGGING
+# =============================================================================
+audit_logging:
+  # Logging backends
+  backends:
+    # File-based logging (always enabled)
+    file:
+      enabled: true
+      path: /var/log/concurrency_audit.jsonl
+      rotation: daily
+      retention_days: 90
+      max_size_mb: 100
+    
+    # Elasticsearch (optional, recommended for production)
+    elasticsearch:
+      enabled: false
+      url: http://localhost:9200
+      index_prefix: concurrency-audit
+      index_rotation: daily
+      retention_days: 90
+      bulk_size: 100
+      flush_interval_seconds: 10
+    
+    # Loki (optional, alternative to Elasticsearch)
+    loki:
+      enabled: false
+      url: http://localhost:3100
+      tenant_id: concurrency
+  
+  # Hash chain for tamper detection
+  hash_chain:
+    enabled: true
+    algorithm: sha256
+    verify_on_startup: true
+    verify_interval_hours: 24
+  
+  # Event categories to log (all enabled by default)
+  log_categories:
+    - INCIDENT_DETECTION
+    - ROOT_CAUSE_ANALYSIS
+    - CODE_LOCALIZATION
+    - FIX_PLANNING
+    - PATCH_GENERATION
+    - SAFETY_GATES
+    - DEPLOYMENT
+    - VERIFICATION
+    - ROLLBACK
+    - LOCK_OPERATION
+    - CONFLICT_DETECTION
+    - STATE_TRANSITION
+    - NOTIFICATION
+    - MANUAL_INTERVENTION
+    - SYSTEM_HEALTH
+  
+  # Severity filtering (log all by default)
+  min_severity: INFO  # INFO, WARNING, ERROR, CRITICAL
+  
+  # Correlation ID tracking
+  correlation:
+    enabled: true
+    propagate_to_downstream: true
+    header_name: X-Correlation-ID
+
+# =============================================================================
+# NOTIFICATIONS
+# =============================================================================
+notifications:
+  # Enabled channels
+  enabled_channels:
+    - slack
+    - email
+    # - pagerduty
+    # - teams
+    # - phone
+  
+  # Slack configuration
+  slack:
+    webhook_url: https://hooks.slack.com/services/YOUR/WEBHOOK/URL
+    channel: "#sre-alerts"
+    username: "Concurrency Orchestrator"
+    icon_emoji: ":robot_face:"
+    mention_on_critical: "@oncall"
+  
+  # Email configuration
+  email:
+    smtp_host: smtp.gmail.com
+    smtp_port: 587
+    smtp_user: alerts@example.com
+    smtp_password: "${SMTP_PASSWORD:-}"  # Use environment variable for SMTP password
+    from_address: alerts@example.com
+    to_addresses:
+      - sre@example.com
+      - engineering@example.com
+    cc_on_critical:
+      - management@example.com
+  
+  # PagerDuty configuration
+  pagerduty:
+    integration_key: your_integration_key
+    api_url: https://events.pagerduty.com/v2/enqueue
+    escalation_policy_id: POLICY_ID
+  
+  # Microsoft Teams configuration
+  teams:
+    webhook_url: https://outlook.office.com/webhook/YOUR/WEBHOOK/URL
+    channel: "SRE Alerts"
+  
+  # Notification routing based on severity
+  routing:
+    INFO:
+      channels: [slack]
+      throttle_minutes: 5  # Max 1 notification per 5 minutes
+    
+    WARNING:
+      channels: [slack, email]
+      throttle_minutes: 2
+    
+    ERROR:
+      channels: [slack, email, pagerduty]
+      throttle_minutes: 0  # No throttling for errors
+    
+    CRITICAL:
+      channels: [slack, email, pagerduty, phone]
+      throttle_minutes: 0
+      escalate_after_minutes: 15
+  
+  # Message templates
+  templates:
+    lock_acquired: |
+      🔒 Lock Acquired
+      Service: {service_name}
+      Operation: {operation_type}
+      Holder: {holder_id}
+      TTL: {ttl_seconds}s
+    
+    conflict_detected: |
+      ⚠️ Conflict Detected
+      Service: {service_name}
+      Conflict Type: {conflict_type}
+      Severity: {severity}
+      Blast Radius: {blast_radius} services
+      Recommendation: {recommendation}
+    
+    safety_gate_failed: |
+      🚫 Safety Gate Failed
+      Service: {service_name}
+      Gate: {gate_type}
+      Reason: {reason}
+      Action Required: Manual review
+    
+    human_review_needed: |
+      👤 Human Review Required
+      Service: {service_name}
+      Reason: {reason}
+      Severity: {severity}
+      Operation ID: {operation_id}
+      Approve/Reject: {approval_url}
+    
+    operation_completed: |
+      ✅ Operation Completed
+      Service: {service_name}
+      Operation: {operation_type}
+      Duration: {duration_seconds}s
+      Result: {result}
+
+# =============================================================================
+# INTEGRATION WITH OTHER STEPS
+# =============================================================================
+integration:
+  # Step 3: RCA Engine (for dependency graph)
+  rca_engine:
+    enabled: true
+    neo4j_uri: bolt://localhost:7687
+    neo4j_user: neo4j
+    neo4j_password: "${NEO4J_PASSWORD:-neo4j}"  # Use environment variable
+  
+  # Step 7: Safety Gates (reuse safety gate logic)
+  safety_gates_service:
+    enabled: true
+    endpoint: http://localhost:8007
+  
+  # Step 8: Deployment Engine
+  deployment_engine:
+    enabled: true
+    endpoint: http://localhost:8008
+    timeout_seconds: 300
+  
+  # Step 9: Verification & Rollback Engine
+  verification_engine:
+    enabled: true
+    endpoint: http://localhost:8009
+    timeout_seconds: 600
+
+# =============================================================================
+# OPERATION TIMEOUTS
+# =============================================================================
+timeouts:
+  # Overall operation timeout
+  operation_timeout_seconds: 600  # 10 minutes
+  
+  # Per-step timeouts
+  lock_acquisition_timeout_seconds: 30
+  safety_check_timeout_seconds: 30
+  conflict_detection_timeout_seconds: 10
+  deployment_timeout_seconds: 300
+  verification_timeout_seconds: 600
+  rollback_timeout_seconds: 300
+  
+  # Retry configuration
+  retries:
+    max_attempts: 3
+    backoff_multiplier: 2
+    initial_delay_seconds: 5
+    max_delay_seconds: 60
+
+# =============================================================================
+# PERFORMANCE & SCALING
+# =============================================================================
+performance:
+  # Concurrency limits
+  max_concurrent_operations: 10
+  max_operations_per_service: 2
+  
+  # Rate limiting
+  rate_limits:
+    operations_per_minute: 30
+    operations_per_hour: 100
+  
+  # Caching
+  cache:
+    enabled: true
+    ttl_seconds: 300
+    max_size: 1000
+  
+  # Connection pooling
+  connection_pools:
+    redis: 10
+    neo4j: 50
+    elasticsearch: 10
+
+# =============================================================================
+# DEVELOPMENT & TESTING
+# =============================================================================
+development:
+  # Development mode (relaxed constraints)
+  dev_mode: false
+  
+  # Mock external services
+  mock_services:
+    redis: false
+    neo4j: false
+    elasticsearch: false
+  
+  # Verbose logging
+  debug_logging: true
+  log_level: DEBUG
+  
+  # Testing
+  test_mode: false
+  test_fixtures_path: /tmp/concurrency_test_fixtures

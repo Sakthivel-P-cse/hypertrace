@@ -1,0 +1,63 @@
+# Core Dependencies for CCP (Continuous Chaos Prevention)
+
+# Data Science and Analysis
+numpy>=1.24.0
+scipy>=1.10.0
+
+# Graph Database
+neo4j>=5.0.0
+
+# Message Queue and Caching
+redis>=4.5.0
+
+# Web and API
+requests>=2.31.0
+
+# Configuration Management
+pyyaml>=6.0
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-asyncio>=0.21.0
+
+# Code Quality
+pylint>=2.17.0
+flake8>=6.0.0
+
+# Kubernetes (optional, for K8s deployment)
+kubernetes>=26.1.0
+
+# Elasticsearch (for audit logging)
+elasticsearch>=8.8.0
+
+# Async Support
+asyncio>=3.4.3
+aiohttp>=3.8.0
+
+# Datetime utilities
+python-dateutil>=2.8.2
+
+# Git integration
+GitPython>=3.1.30
+
+# Environment variable management (optional, better than our simple loader)
+python-dotenv>=1.0.0
+
+# Logging and monitoring
+prometheus-client>=0.17.0
+
+# JSON schema validation
+jsonschema>=4.18.0
+
+# HTTP client
+urllib3>=2.0.0
+
+# Database drivers (if needed)
+psycopg2-binary>=2.9.0  # PostgreSQL
+pymongo>=4.4.0          # MongoDB
+
+# Cloud provider SDKs (optional)
+# boto3>=1.28.0         # AWS
+# azure-identity>=1.13.0  # Azure
+# google-cloud-storage>=2.10.0  # GCP

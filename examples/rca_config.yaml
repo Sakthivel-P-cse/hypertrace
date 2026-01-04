@@ -1,0 +1,76 @@
+# Root Cause Analysis (RCA) Engine Configuration
+# Save as rca_config.yaml
+
+# Neo4j Configuration
+neo4j:
+  uri: "bolt://localhost:7687"
+  user: "neo4j"
+  password: "${NEO4J_PASSWORD:-password}"  # Use environment variable, fallback to 'password' for local dev
+  # Use "neo4j+s://" for secure connections
+
+# Git Repository Configuration
+git:
+  repo_path: "/home/sakthi/PROJECTS/ccp"
+  # Map service names to source code paths
+  service_paths:
+    payment-service: "services/payment"
+    api-gateway: "services/gateway"
+    db-service: "services/database"
+    auth-service: "services/auth"
+
+# Confidence Scoring Weights
+scoring:
+  weights:
+    recent_commit: 0.30
+    recent_deployment: 0.25
+    error_frequency: 0.20
+    error_severity: 0.15
+    dependency_proximity: 0.10
+  
+  # Time decay parameters (in hours)
+  commit_decay_hours: 48
+  deployment_decay_hours: 24
+  
+  # Error count normalization
+  max_error_count: 100
+
+# RCA Analysis Parameters
+analysis:
+  # Max propagation paths to analyze
+  max_propagation_paths: 10
+  
+  # Max candidates to rank
+  max_candidates: 20
+  
+  # Top N candidates to include in report
+  top_n_results: 5
+  
+  # Lookback window for commits (hours)
+  commit_lookback_hours: 168  # 7 days
+  
+  # Lookback window for deployments (hours)
+  deployment_lookback_hours: 72  # 3 days
+
+# Severity Mapping
+severity:
+  critical: 1.0
+  high: 0.8
+  medium: 0.5
+  low: 0.2
+  info: 0.1
+
+# Logging
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  file: "rca_engine.log"
+  max_bytes: 10485760  # 10MB
+  backup_count: 5
+
+# Report Output
+reports:
+  output_dir: "/home/sakthi/PROJECTS/ccp/rca_reports"
+  formats:
+    - text
+    - json
+    - html
+  auto_save: true

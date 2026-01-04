@@ -1,0 +1,311 @@
+# Safety Gate Configuration
+# Implements security policies and check configurations
+
+safety_gates:
+  enabled: true
+  
+  # Improvement #5: Deterministic Re-runs
+  deterministic_builds:
+    enabled: true
+    use_containers: false  # Set to true for full isolation
+    lock_tool_versions: true
+  
+  # Improvement #4: Proof of Safety Artifact
+  artifact:
+    enabled: true
+    output_dir: .safety_reports
+    signer: self-healing-system
+    environment: production
+  
+  # Improvement #1: Change-Aware Safety Gates
+  change_aware:
+    enabled: true
+    run_affected_tests_only: true
+    lint_changed_files_only: true
+    analyze_changed_modules_only: true
+  
+  # Improvement #2: Risk-Weighted Gates
+  risk_assessment:
+    enabled: true
+    
+    # Risk thresholds (0-100)
+    low_risk_threshold: 20
+    medium_risk_threshold: 50
+    high_risk_threshold: 75
+    
+    # Service criticality mapping
+    service_criticality:
+      # Critical services (5/5)
+      payment-service: critical
+      auth-service: critical
+      api-gateway: critical
+      billing-service: critical
+      
+      # High priority services (4/5)
+      user-service: high
+      order-service: high
+      inventory-service: high
+      
+      # Medium priority services (3/5)
+      notification-service: medium
+      email-service: medium
+      worker-service: medium
+      
+      # Low priority services (2/5)
+      analytics-service: low
+      reporting-service: low
+      logging-service: low
+      
+      # Development services (1/5)
+      test-service: dev
+      dev-tools: dev
+    
+    # Deployment strategy by risk level
+    deployment_strategy:
+      low:
+        action: DEPLOY
+        description: Auto-deploy to production
+      medium:
+        action: CANARY
+        description: Canary rollout (5% → 25% → 50% → 100%)
+        canary_steps:
+          - traffic_percentage: 5
+            duration_minutes: 10
+          - traffic_percentage: 25
+            duration_minutes: 15
+          - traffic_percentage: 50
+            duration_minutes: 20
+          - traffic_percentage: 100
+            duration_minutes: 0
+      high:
+        action: MANUAL_REVIEW
+        description: Requires manual approval
+        approvers:
+          - team-lead
+          - senior-engineer
+      critical:
+        action: MANUAL_REVIEW
+        description: Critical risk - must not auto-deploy
+        approvers:
+          - team-lead
+          - principal-engineer
+          - security-team
+
+  # Individual check configurations
+  checks:
+    # Test execution
+    tests:
+      enabled: true
+      required: true
+      fail_on_error: true
+      
+      timeout_seconds: 300
+      minimum_coverage: 80
+      
+      # Improvement #1: Run only affected tests
+      run_affected_only: true
+      always_run_integration_tests: true
+      
+      fail_fast: false
+    
+    # Linting
+    linting:
+      enabled: true
+      required: false
+      fail_on_error: false
+      
+      timeout_seconds: 120
+      max_errors: 10
+      max_warnings: 50
+      
+      # Improvement #1: Lint changed files only
+      changed_files_only: true
+      show_new_issues_only: true
+      
+      # Linters by language
+      linters:
+        python: flake8  # or pylint
+        java: checkstyle
+        javascript: eslint
+        typescript: eslint
+        go: golint
+    
+    # Improvement #3: Security-First Static Analysis
+    static_analysis:
+      enabled: true
+      required: true
+      fail_on_critical: true
+      fail_on_high: true
+      
+      timeout_seconds: 180
+      
+      # Improvement #1: Analyze changed modules only
+      changed_files_only: true
+      
+      # MANDATORY security checks (Improvement #3)
+      security_scan:
+        enabled: true
+        required: true
+        
+        # Fail build if CVSS >= 7.0 (HIGH or CRITICAL)
+        fail_on_cvss_threshold: 7.0
+        
+        # Fail build if secrets found
+        fail_on_secrets: true
+        check_for_secrets:
+          - api_keys
+          - passwords
+          - tokens
+          - private_keys
+          - aws_credentials
+        
+        # Fail build if unsafe APIs found
+        fail_on_unsafe_apis: true
+        unsafe_api_patterns:
+          - eval
+          - exec
+          - pickle.load
+          - yaml.load  # require safe_load
+          - shell=True  # subprocess with shell
+          - os.system
+          - Runtime.exec
+          - innerHTML
+        
+        # Dependency vulnerability scanning
+        scan_dependencies: true
+        dependency_scanners:
+          python: safety
+          java: owasp-dependency-check
+          javascript: npm-audit
+          go: govulncheck
+      
+      # Type checking
+      type_checking:
+        python: mypy
+        typescript: tsc
+      
+      # Code complexity
+      complexity_analysis:
+        enabled: true
+        max_complexity: 15
+        fail_on_high_complexity: false
+    
+    # Build validation
+    build:
+      enabled: true
+      required: true
+      fail_on_error: true
+      
+      timeout_seconds: 600
+      
+      # Improvement #5: Deterministic builds
+      use_containers: false
+      lock_versions: true
+      
+      # Build systems
+      build_systems:
+        python:
+          - poetry
+          - pip
+        java:
+          - maven
+          - gradle
+        javascript:
+          - npm
+          - vite
+          - webpack
+        go:
+          - go
+
+# Improvement #3: Security policies
+security_policies:
+  # Critical services have stricter security requirements
+  critical_services:
+    - payment-service
+    - auth-service
+    - billing-service
+  
+  # Security check requirements by service criticality
+  requirements:
+    critical:
+      security_scan: mandatory
+      secrets_check: mandatory
+      dependency_scan: mandatory
+      manual_review_on_any_finding: true
+    
+    high:
+      security_scan: mandatory
+      secrets_check: mandatory
+      dependency_scan: mandatory
+      manual_review_on_critical: true
+    
+    medium:
+      security_scan: mandatory
+      secrets_check: mandatory
+      dependency_scan: optional
+      manual_review_on_critical: true
+    
+    low:
+      security_scan: optional
+      secrets_check: mandatory
+      dependency_scan: optional
+      manual_review_on_critical: false
+  
+  # CVE severity thresholds
+  cve_thresholds:
+    critical: 9.0  # CVSS >= 9.0
+    high: 7.0      # CVSS >= 7.0
+    medium: 4.0    # CVSS >= 4.0
+    low: 0.1       # CVSS >= 0.1
+  
+  # Allowed/blocked dependencies
+  dependency_policy:
+    blocked_packages:
+      python:
+        - pickle  # unsafe deserialization
+      javascript:
+        - eval  # code injection
+    
+    require_version_pinning: true
+    allow_pre_release: false
+
+# Audit and compliance
+audit:
+  enabled: true
+  
+  # Improvement #4: Always generate proof of safety
+  generate_artifact: true
+  
+  # Retention policy
+  artifact_retention_days: 90
+  
+  # Compliance requirements
+  compliance:
+    - SOC2
+    - ISO27001
+    - PCI-DSS  # For payment services
+  
+  # Log all decisions
+  log_decisions: true
+  log_level: INFO
+
+# Notification settings
+notifications:
+  enabled: true
+  
+  # Notify on failures
+  on_failure:
+    - slack
+    - email
+  
+  # Notify on manual review required
+  on_manual_review:
+    - slack
+    - pagerduty
+  
+  # Contacts
+  contacts:
+    slack_channel: "#self-healing-alerts"
+    email_list:
+      - team-lead@example.com
+      - oncall@example.com
