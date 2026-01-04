@@ -1,0 +1,219 @@
+# Verification Loop Configuration - Step 9
+# All verification, rollback, and resolution settings
+
+prometheus_url: "http://localhost:9090"
+
+# Post-Deployment Verification
+verification:
+  # Wait time before starting verification
+  wait_for_stability_seconds: 120
+  
+  # Verification Budget (prevent analysis paralysis)
+  budget:
+    max_time_minutes: 10              # Max verification duration
+    max_user_impact_pct: 5.0          # Max % users affected
+    max_error_budget_pct: 2.0         # Max error budget consumption
+  
+  # Metrics to verify
+  metrics:
+    - error_rate
+    - p95_latency
+    - throughput
+  
+  # Thresholds
+  improvement_threshold: 0.10         # 10% improvement required
+  degradation_threshold: 0.05         # 5% degradation triggers concern
+  significance_level: 0.05            # p < 0.05 for statistical significance
+  
+  # Control Group Configuration (HIGH-IMPACT FEATURE)
+  control_group_size_pct: 10.0        # Keep 10% on old version for comparison
+  comparison_method: "control_vs_treatment"  # Scientific method
+
+# Metric Stability Analysis
+stability:
+  min_stable_duration_minutes: 5      # Minimum stability period
+  max_coefficient_variation: 0.15     # 15% max CV
+  max_oscillation_frequency: 0.5      # 0.5 oscillations per minute
+  trend_significance_level: 0.05      # Trend p-value threshold
+
+# Rollback Decision Configuration
+rollback:
+  # Error rate thresholds
+  critical_error_rate_pct: 5.0        # > 5% error rate = critical
+  high_error_rate_pct: 2.0            # > 2% error rate = high
+  
+  # Latency thresholds
+  critical_latency_multiplier: 2.0    # 2x baseline = critical
+  high_latency_multiplier: 1.5        # 1.5x baseline = high
+  
+  # Blast radius thresholds
+  critical_blast_radius_pct: 10.0     # > 10% users = critical
+  high_blast_radius_pct: 5.0          # > 5% users = high
+  
+  # Service criticality mapping (affects decision urgency)
+  service_criticality:
+    payment: 0.95                     # Ultra-critical
+    auth: 0.95                        # Ultra-critical
+    user: 0.80                        # High
+    order: 0.75                       # High
+    search: 0.60                      # Medium
+    recommendation: 0.50              # Medium
+    analytics: 0.30                   # Low
+  
+  # Kubernetes configuration
+  kubectl_path: "kubectl"
+  rollback_timeout_seconds: 300
+  health_check_timeout_seconds: 120
+  
+  # Guardrails (DON'T ROLL BACK if...)
+  guardrails:
+    check_previous_version_health: true
+    check_infrastructure_alerts: true
+    check_external_dependencies: true
+    min_previous_version_health_score: 70.0
+
+# Incident Resolution Validation
+resolution:
+  min_resolution_confidence: 80.0     # 80% confidence required
+  alert_clearance_timeout_minutes: 5
+  
+  # Resolution criteria by incident type
+  criteria:
+    high_latency:
+      required:
+        - latency_improved: 5.0       # 5% improvement required
+        - throughput_maintained: -5.0  # Max 5% degradation allowed
+    high_error_rate:
+      required:
+        - error_rate_improved: 10.0   # 10% improvement required
+    timeout:
+      required:
+        - error_rate_improved: 10.0
+        - latency_improved: 10.0
+
+# Cooldown Monitoring (prevent premature closure)
+cooldown:
+  enabled: true
+  duration_minutes: 15                # Monitor for 15 minutes post-verification
+  check_interval_seconds: 60
+  abort_on_alert: true                # Abort if new alert fires
+  abort_on_error_spike: true          # Abort if error rate spikes
+
+# Learning System Configuration
+learning:
+  enabled: true
+  history_file: "verification_history.json"
+  min_samples_for_tuning: 5           # Need 5+ samples to adjust thresholds
+  
+  # Auto-tuning settings
+  auto_tune_thresholds: true
+  tune_interval_days: 7               # Re-tune weekly
+  
+  # False positive/negative tracking
+  track_outcomes: true
+  alert_on_high_fp_rate: true
+  fp_rate_threshold: 0.20             # Alert if FP rate > 20%
+
+# Notification Configuration
+notifications:
+  enabled: true
+  channels:
+    - type: "slack"
+      webhook_url: "${SLACK_WEBHOOK_URL}"
+      on_events:
+        - verification_failed
+        - rollback_executed
+        - incident_resolved
+    
+    - type: "email"
+      recipients:
+        - "oncall@example.com"
+      on_events:
+        - rollback_failed
+        - guardrails_triggered
+  
+  # Notification templates
+  templates:
+    verification_failed: |
+      🚨 Verification Failed
+      Incident: {incident_id}
+      Service: {service_name}
+      Reason: {primary_reason}
+      Action: {rollback_strategy}
+    
+    incident_resolved: |
+      ✅ Incident Resolved
+      Incident: {incident_id}
+      Service: {service_name}
+      Confidence: {resolution_confidence}%
+      Duration: {duration}s
+
+# Artifact Generation
+artifacts:
+  enabled: true
+  output_directory: "./verification_artifacts"
+  retention_days: 90
+  
+  # Artifact types
+  generate:
+    - verification_result
+    - rollback_decision
+    - rollback_execution
+    - resolution_validation
+    - explainability_report
+  
+  # Explainability artifact (HIGH-IMPACT FEATURE)
+  explainability:
+    include_top_reasons: 3
+    include_metric_details: true
+    include_confidence_breakdown: true
+    generate_markdown: true
+    generate_json: true
+
+# Monitoring & Observability
+monitoring:
+  # Metrics to export
+  export_metrics:
+    - verification_success_rate
+    - rollback_rate
+    - false_positive_rate
+    - false_negative_rate
+    - resolution_confidence_avg
+    - verification_duration_seconds
+  
+  # Dashboards
+  dashboards:
+    grafana_enabled: true
+    dashboard_uid: "verification-loop-dashboard"
+
+# Advanced Features Configuration
+advanced:
+  # Multi-signal voting
+  multi_signal_voting:
+    enabled: true
+    signals:
+      - error_rate
+      - latency
+      - alerts
+      - logs
+      - business_metrics
+    voting_method: "weighted_majority"
+  
+  # Shadow baseline comparison
+  shadow_comparison:
+    enabled: true
+    shadow_traffic_pct: 5.0
+    compare_with_shadow: true
+  
+  # Partial success handling
+  partial_success:
+    enabled: true
+    create_follow_up_incident: true
+    flag_for_manual_review: true
+  
+  # Statistical rigor
+  statistics:
+    confidence_intervals: true
+    confidence_level: 0.95            # 95% CI
+    bootstrap_iterations: 1000
+    use_t_test: true

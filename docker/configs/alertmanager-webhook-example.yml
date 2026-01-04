@@ -1,0 +1,17 @@
+# Prometheus Alertmanager Webhook Configuration Example
+# Add this to your alertmanager.yml receivers section
+receivers:
+  - name: 'incident-webhook'
+    webhook_configs:
+      - url: 'http://incident-processor:5000/incident'
+        http_config:
+          # Optional: add authentication, TLS, etc.
+        send_resolved: true
+
+# Example route
+route:
+  receiver: 'incident-webhook'
+  group_by: ['alertname']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 1h

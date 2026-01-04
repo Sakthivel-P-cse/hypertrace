@@ -1,0 +1,19 @@
+{
+  "name": "hypertrace-example",
+  "version": "1.0.0",
+  "description": "A simple example of instrumenting a Node.js app for Hypertrace",
+  "main": "server.js",
+  "scripts": {
+    "start": "node -r ./tracing.js server.js"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.4.1",
+    "@opentelemetry/auto-instrumentations-node": "^0.37.0",
+    "@opentelemetry/exporter-trace-otlp-grpc": "^0.39.1",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.208.0",
+    "@opentelemetry/resources": "^1.13.0",
+    "@opentelemetry/sdk-node": "^0.39.1",
+    "@opentelemetry/semantic-conventions": "^1.13.0",
+    "express": "^4.18.2"
+  }
+}

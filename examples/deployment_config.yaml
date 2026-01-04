@@ -1,0 +1,191 @@
+# Deployment Configuration for Step 8
+# Configure deployment strategies, canary settings, and monitoring
+
+deployment:
+  # General settings
+  image_registry: "localhost:5000"
+  namespace: "production"
+  kubernetes_context: "production-cluster"
+  
+  # Deployment strategies
+  strategy:
+    default: "canary"  # canary, blue-green, full
+    use_canary_for_critical_services: true
+    auto_promote: true
+  
+  # Immutable deployment enforcement
+  immutable:
+    enforce_no_latest_tag: true
+    require_commit_hash_in_tag: true
+    prevent_in_place_mutation: true
+  
+  # Blast-radius control
+  blast_radius:
+    max_unavailable: 0
+    max_surge: 1
+    namespace_isolation: true
+    pod_disruption_budget:
+      enabled: true
+      min_available: 1
+  
+  # Canary configuration
+  canary:
+    enabled: true
+    stages: [5, 25, 50, 100]  # Traffic percentages
+    wait_time_seconds: 60  # Wait at each stage
+    evaluation_window_seconds: 300  # Metric evaluation window
+    max_failures: 1  # Max health gate failures before rollback
+    
+    # Progressive health gates
+    health_gates:
+      enabled: true
+      
+      gates:
+        - name: "error_rate"
+          threshold_multiplier: 1.1  # 110% of baseline
+          severity: "critical"
+          
+        - name: "p95_latency"
+          threshold_ms: 500
+          severity: "critical"
+          
+        - name: "p99_latency"
+          threshold_ms: 1000
+          severity: "high"
+          
+        - name: "cpu_saturation"
+          threshold: 0.8  # 80%
+          severity: "high"
+          
+        - name: "memory_usage"
+          threshold: 0.9  # 90%
+          severity: "medium"
+          
+        - name: "request_rate_drop"
+          threshold: 0.5  # At least 50% of baseline
+          severity: "medium"
+  
+  # Deployment confidence scoring
+  confidence:
+    enabled: true
+    threshold_auto_promote: 80.0  # Auto-promote if >= 80
+    threshold_manual_review: 60.0  # Manual review if 60-80
+    # < 60 = rollback
+    
+    weights:
+      safety_score: 0.30
+      canary_health: 0.25
+      blast_radius: 0.15
+      historical_success: 0.10
+      change_complexity: 0.10
+      test_coverage: 0.10
+  
+  # Service criticality mapping
+  service_criticality:
+    payment-service: 0.9  # Critical
+    auth-service: 0.9
+    user-service: 0.8
+    order-service: 0.7
+    notification-service: 0.5
+    analytics-service: 0.3
+    logging-service: 0.2
+  
+  # Resource limits by criticality
+  resources:
+    critical:
+      replicas: 5
+      min_replicas: 3
+      max_replicas: 20
+      memory_request: "512Mi"
+      memory_limit: "1Gi"
+      cpu_request: "250m"
+      cpu_limit: "1000m"
+    
+    high:
+      replicas: 3
+      min_replicas: 2
+      max_replicas: 10
+      memory_request: "256Mi"
+      memory_limit: "512Mi"
+      cpu_request: "100m"
+      cpu_limit: "500m"
+    
+    medium:
+      replicas: 2
+      min_replicas: 1
+      max_replicas: 5
+      memory_request: "128Mi"
+      memory_limit: "256Mi"
+      cpu_request: "50m"
+      cpu_limit: "250m"
+    
+    low:
+      replicas: 1
+      min_replicas: 1
+      max_replicas: 3
+      memory_request: "64Mi"
+      memory_limit: "128Mi"
+      cpu_request: "25m"
+      cpu_limit: "100m"
+
+# Monitoring integration
+monitoring:
+  prometheus:
+    url: "http://prometheus.monitoring.svc.cluster.local:9090"
+    scrape_interval: "15s"
+  
+  grafana:
+    url: "http://grafana.monitoring.svc.cluster.local:3000"
+    dashboard_id: "deployment-monitoring"
+  
+  metrics_to_track:
+    - "http_request_duration_seconds"
+    - "http_requests_total"
+    - "container_cpu_usage_seconds_total"
+    - "container_memory_usage_bytes"
+
+# Rollback configuration
+rollback:
+  automatic: true
+  timeout_seconds: 300
+  conditions:
+    - health_gate_failure
+    - deployment_timeout
+    - manual_trigger
+  
+  preserve_logs: true
+  notify_on_rollback: true
+
+# Audit and compliance
+audit:
+  enabled: true
+  retention_days: 90
+  log_all_state_transitions: true
+  generate_artifacts: true
+  artifact_format: "json"
+  artifact_signing:
+    enabled: true
+    algorithm: "sha256"
+
+# Shadow deployments (optional, advanced)
+shadow:
+  enabled: false
+  traffic_mirroring_percentage: 10
+  compare_responses: true
+  alert_on_divergence: true
+
+# Notifications
+notifications:
+  enabled: true
+  channels:
+    - type: "slack"
+      webhook_url: "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+    - type: "email"
+      recipients: ["ops-team@example.com"]
+  
+  notify_on:
+    - deployment_start
+    - deployment_success
+    - deployment_failure
+    - rollback
+    - manual_review_required
